@@ -1,0 +1,17 @@
+# Seed load order for db/rebuild.sh and db/rebuild.ps1.   <kind> <path relative to db/>
+#   core   = reference + roll-call data, always loaded
+#   sample = synthetic transactional data (attendance, payments, marks, ...) - skipped with --no-sample
+core   seed/00_admin_seed.sql
+core   seed/01_academics_seed.sql
+core   seed/01_academics_timetable_seed.sql
+core   seed/02_students_seed.sql
+core   seed/02_hostel_seed.sql
+core   seed/03_attendance_seed.sql
+core   seed/04_finance_seed.sql
+core   seed/05_exams_seed.sql
+core   seed/06_placement_seed.sql
+core   seed/07_users_seed.sql
+sample seed/sample/03_attendance_sample.sql
+sample seed/sample/04_finance_sample.sql
+sample seed/sample/05_exams_sample.sql
+sample seed/sample/07_admin_sample.sql

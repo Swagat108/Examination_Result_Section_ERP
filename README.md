@@ -66,10 +66,13 @@ Every module router already applies `requireAuth`. Use `requireRole(...)` per ro
 
 ## Database
 
-- `db/*.sql` and `db/seed/` are unchanged (MySQL 8.0 syntax). Run order and rebuild scripts: `db/rebuild.sh` / `db/rebuild.ps1`.
-- The backend talks to **Supabase** through `backend/src/config/db.ts`. Fill these in `.env` once the project exists (see `.env.example`): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`.
-- Until they are set, `/api/health` reports the database as not configured and `db()` throws a clear error.
-- Supabase runs PostgreSQL, so the MySQL scripts will need a port when the team migrates. That is a separate task.
+- `db/*.sql` and `db/seed/` are the original **MySQL 8.0** scripts and are unchanged (`db/rebuild.sh` / `db/rebuild.ps1` still work against a local MySQL).
+- `db/postgres/` is the **PostgreSQL port** that runs on Supabase: same tables, constraints, functions, procedures, triggers, views and seed data. Procedures became functions so the backend can call them with `db().rpc("sp_name", {...})`. Porting notes are at the top of `db/postgres/00_admin_objects.sql`.
+- Apply it with `npm run db:migrate` (needs `DATABASE_URL` in `.env`). Flags: `-- --no-sample` skips the synthetic sample data, `-- --reset` drops everything in `public` first. Never run `--reset` against data you care about.
+- When you change the schema, change **both** the MySQL script and its `db/postgres/` twin so the two stay in step.
+- The backend talks to Supabase through `backend/src/config/db.ts`, using `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (server only). `DATABASE_URL` (direct Postgres connection, Supabase > Project Settings > Database) is only used by the migration script. All of these go in `.env`, which is gitignored; copy the shape from `.env.example`.
+- Row level security is on for every table and the `anon` / `authenticated` roles have no privileges, so the data is reachable only through the backend's service-role key.
+- Until the keys are set, `/api/health` reports the database as not configured and `db()` throws a clear error.
 
 ## Git workflow
 

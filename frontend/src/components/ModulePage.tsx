@@ -9,7 +9,7 @@ interface ModuleResponse<T> {
   items: T[];
 }
 
-// Shared list-screen scaffold: control panel (search + mass-action area) and a selectable table.
+// Shared list-screen scaffold: control panel (search + mass-action area), a summary strip and a selectable table.
 // Add your module's bulk actions next to the "Clear selection" button; the selected rows are `rows` filtered by `selected`.
 export function ModulePage<T>({ module, columns }: { module: string; columns: Column<T>[] }) {
   const [data, setData] = useState<ModuleResponse<T> | null>(null);
@@ -58,6 +58,16 @@ export function ModulePage<T>({ module, columns }: { module: string; columns: Co
         <input type="search" placeholder="Search..." value={query} onChange={(e) => updateQuery(e.target.value)} />
       </ControlPanel>
       <div className="content">
+        <div className="summary">
+          <div className="chip">
+            <b>{rows.length}</b>
+            <span>{query ? "Matching" : "Total"} records</span>
+          </div>
+          <div className="chip">
+            <b>{selected.size}</b>
+            <span>Selected</span>
+          </div>
+        </div>
         <DataTable columns={columns} rows={rows} selection={{ selected, onToggle: toggle, onToggleAll: toggleAll }} />
       </div>
     </>

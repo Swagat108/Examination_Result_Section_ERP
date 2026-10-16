@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { Icon } from "../components/Icon";
 import { MODULES } from "../modules";
 
 const COLLAPSE_KEY = "erp_sidebar_collapsed";
@@ -32,11 +33,15 @@ export function AppLayout() {
     <div className="app">
       <header className="topbar">
         <button className="icon" onClick={toggle} aria-label="Toggle sidebar" aria-expanded={!collapsed}>
-          &#9776;
+          <Icon name="menu" />
         </button>
-        <span className="brand">University ERP</span>
+        <span className="brand">
+          <span className="brand-mark">UE</span>
+          University ERP
+        </span>
         <span className="topbar-spacer" />
         <div className="topbar-user">
+          <span className="avatar">{user?.username.charAt(0)}</span>
           <span>{user?.username}</span>
           <span className="tag">{user?.roles.join(", ")}</span>
           <button className="secondary" onClick={logout}>
@@ -46,14 +51,15 @@ export function AppLayout() {
       </header>
       <div className="app-body">
         <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
+          <div className="nav-heading">Menu</div>
           <nav>
             <NavLink to="/" end title="Dashboard">
-              <span className="nav-glyph">D</span>
+              <Icon name="dashboard" />
               <span className="nav-label">Dashboard</span>
             </NavLink>
             {visible.map((m) => (
               <NavLink key={m.key} to={m.path} title={m.label}>
-                <span className="nav-glyph">{m.group}</span>
+                <Icon name={m.key} />
                 <span className="nav-label">{m.label}</span>
               </NavLink>
             ))}

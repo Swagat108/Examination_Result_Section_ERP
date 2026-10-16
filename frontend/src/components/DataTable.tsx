@@ -5,32 +5,57 @@ export interface Column<T> {
   render: (row: T) => ReactNode;
 }
 
-export function DataTable<T>({ columns, rows }: { columns: Column<T>[]; rows: T[] }) {
+interface Selection {
+  selected: ReadonlySet<number>;
+  onToggle: (index: number) => void;
+  onToggleAll: () => void;
+}
+
+// `selection` is optional: pass it to show a checkbox column for mass actions.
+export function DataTable<T>({ columns, rows, selection }: { columns: Column<T>[]; rows: T[]; selection?: Selection }) {
+  const allSelected = selection !== undefined && rows.length > 0 && selection.selected.size === rows.length;
   return (
-    <table className="table">
-      <thead>
-        <tr>
-          {columns.map((c) => (
-            <th key={c.header}>{c.header}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length === 0 && (
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
           <tr>
-            <td colSpan={columns.length} className="muted">
-              No data
-            </td>
-          </tr>
-        )}
-        {rows.map((row, i) => (
-          <tr key={i}>
+            {selection && (
+              <th className="check">
+                <input type="checkbox" aria-label="Select all" checked={allSelected} onChange={selection.onToggleAll} />
+              </th>
+            )}
             {columns.map((c) => (
-              <td key={c.header}>{c.render(row)}</td>
+              <th key={c.header}>{c.header}</th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={columns.length + (selection ? 1 : 0)} className="muted">
+                No data
+              </td>
+            </tr>
+          )}
+          {rows.map((row, i) => (
+            <tr key={i} className={selection?.selected.has(i) ? "selected" : undefined}>
+              {selection && (
+                <td className="check">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select row ${i + 1}`}
+                    checked={selection.selected.has(i)}
+                    onChange={() => selection.onToggle(i)}
+                  />
+                </td>
+              )}
+              {columns.map((c) => (
+                <td key={c.header}>{c.render(row)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

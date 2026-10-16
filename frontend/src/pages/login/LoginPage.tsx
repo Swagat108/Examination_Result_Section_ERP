@@ -25,9 +25,16 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="login">
-      <form onSubmit={submit} className="card">
-        <h1>University ERP</h1>
+    <div className="login-page">
+      <header className="masthead">
+        <div className="container">
+          <span className="wordmark">University ERP</span>
+        </div>
+      </header>
+      <div className="login-body">
+      <form onSubmit={submit} className="card login-card">
+        <h1>Sign in</h1>
+        <div className="gold-rule" />
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} />
@@ -38,8 +45,9 @@ export default function LoginPage() {
         </label>
         {error && <p className="error">{error}</p>}
         <button type="submit">Sign in</button>
-        <p className="muted">Dev accounts (password123): {DEV_ACCOUNTS.join(", ")}</p>
+        <p className="muted caption">Dev accounts (password123): {DEV_ACCOUNTS.join(", ")}</p>
       </form>
+      </div>
     </div>
   );
 }

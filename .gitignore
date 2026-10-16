@@ -5,7 +5,7 @@ build/
 .vite/
 
 # secrets and local config
-.env
+
 .env.*
 !.env.example
 

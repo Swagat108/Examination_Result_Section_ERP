@@ -11,11 +11,16 @@ export const authRouter = Router();
 const DEV_PASSWORD = "password123";
 const devUsers: AuthUser[] = [
   { id: 1, username: "admin", email: "admin@erp.test", roles: ["ADMIN"] },
-  { id: 2, username: "faculty", email: "faculty@erp.test", roles: ["FACULTY"] },
-  { id: 3, username: "student", email: "student@erp.test", roles: ["STUDENT"] },
-  { id: 4, username: "accountant", email: "accountant@erp.test", roles: ["ACCOUNTANT"] },
-  { id: 5, username: "placement", email: "placement@erp.test", roles: ["PLACEMENT_OFFICER"] },
+  { id: 2, username: "faculty", email: "faculty@erp.test", roles: ["FACULTY"], employeeId: "EMP0101" },
+  { id: 2, username: "faculty.demo", email: "faculty.demo@erp.local", roles: ["FACULTY"], employeeId: "EMP0101" },
+  { id: 3, username: "student", email: "student@erp.test", roles: ["STUDENT"], studentId: "2024ETC0003" },
+  { id: 3, username: "student.demo", email: "student.demo@erp.local", roles: ["STUDENT"], studentId: "2024ETC0003" },
+  { id: 4, username: "accountant", email: "accountant@erp.test", roles: ["ACCOUNTANT"], employeeId: "EMP0201" },
+  { id: 4, username: "accountant.demo", email: "accountant.demo@erp.local", roles: ["ACCOUNTANT"], employeeId: "EMP0201" },
+  { id: 5, username: "placement", email: "placement@erp.test", roles: ["PLACEMENT_OFFICER"], employeeId: "EMP0202" },
+  { id: 5, username: "placement.demo", email: "placement.demo@erp.local", roles: ["PLACEMENT_OFFICER"], employeeId: "EMP0202" },
 ];
+
 
 const loginSchema = z.object({ username: z.string().min(1), password: z.string().min(1) });
 

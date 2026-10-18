@@ -133,6 +133,25 @@ CREATE TABLE result (
   KEY ix_result_offering (offering_id)
 ) ENGINE=InnoDB COMMENT='G2: published course result; credits and grade points come from course / grade_scale';
 
+CREATE TABLE marks_submission (
+  submission_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  exam_id VARCHAR(16) NOT NULL,
+  offering_id INT UNSIGNED NOT NULL,
+  status ENUM('DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'DRAFT',
+  submitted_by CHAR(7) NULL,
+  submitted_at TIMESTAMP NULL,
+  reviewed_by INT UNSIGNED NULL,
+  reviewed_at TIMESTAMP NULL,
+  rejection_reason TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT pk_marks_submission PRIMARY KEY (submission_id),
+  CONSTRAINT uq_marks_submission UNIQUE (exam_id, offering_id),
+  CONSTRAINT fk_marksub_exam FOREIGN KEY (exam_id) REFERENCES exam (exam_id) ON DELETE CASCADE,
+  CONSTRAINT fk_marksub_offering FOREIGN KEY (offering_id) REFERENCES course_offering (offering_id) ON DELETE CASCADE,
+  KEY ix_marksub_exam (exam_id, status)
+) ENGINE=InnoDB COMMENT='G2: review and approval lifecycle for course examination marks';
+
 -- ---------------------------------------------------------------------
 -- SQL OBJECTS
 -- ---------------------------------------------------------------------

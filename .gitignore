@@ -6,6 +6,7 @@ build/
 
 # secrets and local config
 
+.env
 .env.*
 !.env.example
 

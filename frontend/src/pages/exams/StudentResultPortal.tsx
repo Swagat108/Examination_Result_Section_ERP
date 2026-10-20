@@ -111,7 +111,6 @@ export function StudentResultPortal({ onNavigateToBacklogForm }: StudentResultPo
 
   // Check for any backlogs across all published results
   const allBacklogs = data.semesters.flatMap((s) => s.courses).filter((c) => c.grade === "F");
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Student Banner and Cumulative CGPA Card */}
@@ -211,7 +210,6 @@ export function StudentResultPortal({ onNavigateToBacklogForm }: StudentResultPo
           )}
         </div>
       )}
-
       {/* Printable Official University Header */}
       <div className="print-only" style={{ display: "none", textAlign: "center", marginBottom: "20px" }}>
         <h1 style={{ fontSize: "24px", margin: "0 0 4px", fontWeight: 700, color: "#1d5c4d" }}>

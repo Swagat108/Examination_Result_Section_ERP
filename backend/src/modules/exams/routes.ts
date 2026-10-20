@@ -271,6 +271,651 @@ examsRouter.get(
 );
 
 // =====================================================================
+// BACKLOG / SUPPLEMENTARY EXAM FORMS (FOR FAILED STUDENTS)
+// =====================================================================
+
+// Backlog KPI statistics (Admin, Faculty, Student)
+examsRouter.get(
+  "/backlog/stats",
+  requireRole("ADMIN", "FACULTY", "STUDENT"),
+  asyncHandler(async (_req, res) => {
+    const supabase = getDb();
+
+    // Query all failed course results
+    const { data: failedResults, error: failedErr } = await supabase
+      .from("result")
+      .select("result_id, student_id, offering_id, grade")
+      .eq("grade", "F");
+
+    if (failedErr) throw new HttpError(500, failedErr.message);
+
+    const distinctStudents = new Set((failedResults ?? []).map((r) => r.student_id));
+
+    // Query backlog exam forms
+    const { data: forms, error: formsErr } = await supabase
+      .from("backlog_exam_form")
+      .select("form_id, status, payment_status, total_fee");
+
+    if (formsErr) throw new HttpError(500, formsErr.message);
+
+    const totalForms = forms?.length ?? 0;
+    const pendingReview = forms?.filter((f) => f.status === "SUBMITTED" || f.status === "UNDER_REVIEW").length ?? 0;
+    const approvedForms = forms?.filter((f) => f.status === "APPROVED").length ?? 0;
+    const totalFeesCollected = forms
+      ?.filter((f) => f.payment_status === "PAID")
+      .reduce((sum, f) => sum + Number(f.total_fee || 0), 0) ?? 0;
+
+    res.json({
+      totalFailedCourses: failedResults?.length ?? 0,
+      totalFailedStudents: distinctStudents.size,
+      totalForms,
+      pendingReview,
+      approvedForms,
+      totalFeesCollected,
+    });
+  }),
+);
+
+// List all failed students across university (Admin & Faculty)
+examsRouter.get(
+  "/backlog/failed-students",
+  requireRole("ADMIN", "FACULTY"),
+  asyncHandler(async (_req, res) => {
+    const supabase = getDb();
+
+    // Fetch all results where grade = 'F'
+    const { data: failedResults, error: resErr } = await supabase
+      .from("result")
+      .select(`
+        result_id,
+        student_id,
+        offering_id,
+        grade,
+        total_marks,
+        max_marks,
+        percentage,
+        published_on,
+        student(student_id, full_name, enrollment_no, email, admission_year, program(program_name, program_code)),
+        course_offering(offering_id, course_code, course(course_title, credits, course_type), semester(term, academic_year(label)))
+      `)
+      .eq("grade", "F");
+
+    if (resErr) throw new HttpError(500, resErr.message);
+
+    // Fetch all backlog exam forms submitted so far
+    const { data: existingForms } = await supabase
+      .from("backlog_exam_form")
+      .select("form_id, form_no, student_id, exam_id, status, payment_status, total_fee, total_subjects, created_at");
+
+    const formMap = new Map<string, any[]>();
+    for (const f of existingForms ?? []) {
+      if (!formMap.has(f.student_id)) formMap.set(f.student_id, []);
+      formMap.get(f.student_id)!.push(f);
+    }
+
+    // Group by student
+    const studentMap = new Map<string, any>();
+    for (const item of (failedResults as any[]) ?? []) {
+      const sid = item.student_id;
+      const stud = Array.isArray(item.student) ? item.student[0] : item.student;
+      const prog = Array.isArray(stud?.program) ? stud.program[0] : stud?.program;
+      const off = Array.isArray(item.course_offering) ? item.course_offering[0] : item.course_offering;
+      const crs = Array.isArray(off?.course) ? off.course[0] : off?.course;
+      const sem = Array.isArray(off?.semester) ? off.semester[0] : off?.semester;
+      const ay = Array.isArray(sem?.academic_year) ? sem.academic_year[0] : sem?.academic_year;
+
+      if (!studentMap.has(sid)) {
+        const studentForms = formMap.get(sid) || [];
+        studentMap.set(sid, {
+          studentId: sid,
+          fullName: stud?.full_name || sid,
+          enrollmentNo: stud?.enrollment_no || "--",
+          email: stud?.email || "--",
+          admissionYear: stud?.admission_year || "--",
+          programName: prog?.program_name || "Engineering",
+          programCode: prog?.program_code || "ENG",
+          failedCoursesCount: 0,
+          failedCourses: [],
+          forms: studentForms,
+          latestForm: studentForms.length > 0 ? studentForms[studentForms.length - 1] : null,
+        });
+      }
+
+      const st = studentMap.get(sid)!;
+      st.failedCoursesCount += 1;
+      st.failedCourses.push({
+        resultId: item.result_id,
+        offeringId: item.offering_id,
+        courseCode: off?.course_code || "--",
+        courseTitle: crs?.course_title || "Course",
+        credits: crs?.credits || 3,
+        courseType: crs?.course_type || "THEORY",
+        totalMarks: item.total_marks,
+        maxMarks: item.max_marks,
+        percentage: item.percentage,
+        grade: item.grade,
+        semesterTerm: sem?.term || "Term",
+        academicYear: ay?.label || "2025-26",
+      });
+    }
+
+    res.json({
+      students: Array.from(studentMap.values()),
+      totalStudents: studentMap.size,
+    });
+  }),
+);
+
+// Get eligible backlog courses for a specific student (Student self-service or Admin on-behalf)
+examsRouter.get(
+  "/backlog/eligible-courses/:studentId",
+  requireRole("ADMIN", "FACULTY", "STUDENT"),
+  asyncHandler(async (req, res) => {
+    const { studentId } = req.params;
+    const user = req.user;
+    const isStudent = user?.roles.includes("STUDENT");
+
+    // Student role security: allow querying their own ID or demo fallback
+    if (isStudent && user?.studentId && user.studentId !== studentId) {
+      // In demo environments, allow students to view demo students like 2024ETC0018
+      const allowedDemoIds = ["2024ETC0018", "2024ETC0075", "2024ETC0077", "2024ETC0145", "2024ETC0174"];
+      if (!allowedDemoIds.includes(studentId)) {
+        throw new HttpError(403, "You can only view your own backlog courses");
+      }
+    }
+
+    const supabase = getDb();
+
+    // 1. Fetch student info
+    const { data: student, error: studErr } = await supabase
+      .from("student")
+      .select("student_id, enrollment_no, full_name, email, admission_year, program(*)")
+      .eq("student_id", studentId)
+      .maybeSingle();
+
+    if (studErr) throw new HttpError(500, studErr.message);
+    if (!student) throw new HttpError(404, `Student with ID ${studentId} not found`);
+
+    // 2. Fetch all failed results
+    const { data: failedResults, error: failErr } = await supabase
+      .from("result")
+      .select(`
+        result_id,
+        student_id,
+        offering_id,
+        grade,
+        total_marks,
+        max_marks,
+        percentage,
+        published_on,
+        course_offering(
+          offering_id,
+          course_code,
+          course(course_title, credits, course_type),
+          semester(semester_id, term, academic_year(label))
+        )
+      `)
+      .eq("student_id", studentId)
+      .eq("grade", "F");
+
+    if (failErr) throw new HttpError(500, failErr.message);
+
+    // 3. Fetch active / scheduled exams for registration
+    const { data: exams, error: examErr } = await supabase
+      .from("exam")
+      .select("exam_id, exam_name, exam_type, semester_id, sem_no, start_date, end_date, registration_deadline, status")
+      .in("status", ["REGISTRATION_OPEN", "SCHEDULED", "ONGOING"])
+      .order("start_date", { ascending: true });
+
+    if (examErr) throw new HttpError(500, examErr.message);
+
+    // 4. Fetch existing backlog forms for this student
+    const { data: existingForms, error: formErr } = await supabase
+      .from("backlog_exam_form")
+      .select("*, exam(exam_name, exam_type)")
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false });
+
+    if (formErr) throw new HttpError(500, formErr.message);
+
+    // 5. Fetch form items for existing forms to mark which offerings are already submitted
+    const formIds = (existingForms ?? []).map((f) => f.form_id);
+    let submittedOfferings = new Set<number>();
+    if (formIds.length > 0) {
+      const { data: items } = await supabase
+        .from("backlog_exam_form_item")
+        .select("offering_id, form_id")
+        .in("form_id", formIds);
+      submittedOfferings = new Set((items ?? []).map((i) => i.offering_id));
+    }
+
+    const failedCourses = ((failedResults as any[]) ?? []).map((item) => {
+      const off = Array.isArray(item.course_offering) ? item.course_offering[0] : item.course_offering;
+      const crs = Array.isArray(off?.course) ? off.course[0] : off?.course;
+      const sem = Array.isArray(off?.semester) ? off.semester[0] : off?.semester;
+      const ay = Array.isArray(sem?.academic_year) ? sem.academic_year[0] : sem?.academic_year;
+
+      return {
+        resultId: item.result_id,
+        offeringId: item.offering_id,
+        courseCode: off?.course_code || "--",
+        courseTitle: crs?.course_title || "Course",
+        credits: crs?.credits || 3,
+        courseType: crs?.course_type || "THEORY",
+        totalMarks: item.total_marks,
+        maxMarks: item.max_marks,
+        percentage: item.percentage,
+        grade: item.grade,
+        semesterTerm: sem?.term || "Term",
+        academicYear: ay?.label || "2025-26",
+        isAlreadySubmitted: submittedOfferings.has(item.offering_id),
+      };
+    });
+
+    res.json({
+      student,
+      failedCourses,
+      availableExams: exams ?? [],
+      existingForms: existingForms ?? [],
+      feesConfig: {
+        baseFee: 250,
+        perSubjectFee: 350,
+        currency: "INR",
+        symbol: "₹",
+      },
+    });
+  }),
+);
+
+// Submit a new Backlog Exam Form (Student or Admin on behalf)
+const createBacklogFormSchema = z.object({
+  studentId: z.string().min(1, "Student ID is required"),
+  examId: z.string().min(1, "Target Exam ID is required"),
+  offeringIds: z.array(z.number()).min(1, "Please select at least one failed course to re-appear for"),
+  paymentMode: z.enum(["ONLINE", "COUNTER_CASH", "CHALLAN", "UPI"]).default("ONLINE"),
+  paymentReference: z.string().optional(),
+  declarationAccepted: z.boolean().refine((val) => val === true, "Candidate declaration must be accepted"),
+  remarks: z.string().optional(),
+  autoApprove: z.boolean().optional(),
+});
+
+examsRouter.post(
+  "/backlog/forms",
+  requireRole("ADMIN", "STUDENT"),
+  asyncHandler(async (req, res) => {
+    const supabase = getDb();
+    const user = req.user;
+    const isStudent = user?.roles.includes("STUDENT");
+
+    const parsed = createBacklogFormSchema.parse(req.body);
+
+    if (isStudent && user?.studentId && user.studentId !== parsed.studentId) {
+      // In demo mode, allow demo student switching
+      const allowedDemoIds = ["2024ETC0018", "2024ETC0075", "2024ETC0077", "2024ETC0145", "2024ETC0174"];
+      if (!allowedDemoIds.includes(parsed.studentId)) {
+        throw new HttpError(403, "Students can only submit backlog forms for themselves");
+      }
+    }
+
+    // 1. Verify target exam exists
+    const { data: exam, error: examErr } = await supabase
+      .from("exam")
+      .select("exam_id, exam_name, exam_type, semester_id, sem_no, status")
+      .eq("exam_id", parsed.examId)
+      .single();
+
+    if (examErr || !exam) throw new HttpError(404, "Target examination not found");
+
+    // 2. Verify student exists
+    const { data: student, error: studErr } = await supabase
+      .from("student")
+      .select("student_id, full_name, enrollment_no")
+      .eq("student_id", parsed.studentId)
+      .single();
+
+    if (studErr || !student) throw new HttpError(404, "Student not found");
+
+    // 3. Verify offerings belong to this student's failed results
+    const { data: failedResults, error: failErr } = await supabase
+      .from("result")
+      .select(`
+        result_id,
+        offering_id,
+        grade,
+        total_marks,
+        course_offering(offering_id, course_code, course(course_title, credits), semester(term, academic_year(label)))
+      `)
+      .eq("student_id", parsed.studentId)
+      .in("offering_id", parsed.offeringIds);
+
+    if (failErr) throw new HttpError(500, failErr.message);
+
+    if (!failedResults || failedResults.length === 0) {
+      throw new HttpError(400, "None of the selected courses correspond to failed course results for this student");
+    }
+
+    // 4. Calculate fees
+    const BASE_FEE = 250.00;
+    const PER_SUBJECT_FEE = 350.00;
+    const subjectCount = failedResults.length;
+    const totalCredits = failedResults.reduce((acc, r: any) => {
+      const off = Array.isArray(r.course_offering) ? r.course_offering[0] : r.course_offering;
+      const crs = Array.isArray(off?.course) ? off.course[0] : off?.course;
+      return acc + (crs?.credits || 3);
+    }, 0);
+    const totalFee = BASE_FEE + (PER_SUBJECT_FEE * subjectCount);
+
+    // 5. Generate unique form number
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const formNo = `BEF-${exam.exam_id.replace(/^EX-/, "")}-${randomSuffix}`;
+
+    const paymentRef = parsed.paymentReference || (parsed.paymentMode === "ONLINE" || parsed.paymentMode === "UPI"
+      ? `TXN-${Date.now().toString().slice(-8)}`
+      : null);
+
+    const paymentStatus = parsed.paymentMode === "ONLINE" || parsed.paymentMode === "UPI" || parsed.autoApprove
+      ? "PAID"
+      : "PENDING";
+
+    const initialStatus = parsed.autoApprove ? "APPROVED" : "SUBMITTED";
+
+    // 6. Insert backlog_exam_form
+    const { data: createdForm, error: formInsertErr } = await supabase
+      .from("backlog_exam_form")
+      .insert({
+        form_no: formNo,
+        student_id: parsed.studentId,
+        exam_id: parsed.examId,
+        academic_year: "2026-27",
+        total_subjects: subjectCount,
+        total_credits: totalCredits,
+        base_fee: BASE_FEE,
+        per_subject_fee: PER_SUBJECT_FEE,
+        total_fee: totalFee,
+        payment_mode: parsed.paymentMode,
+        payment_status: paymentStatus,
+        payment_reference: paymentRef,
+        status: initialStatus,
+        remarks: parsed.remarks || (parsed.autoApprove ? "Approved automatically upon submission" : "Submitted by candidate online"),
+        reviewed_by: parsed.autoApprove ? (user?.employeeId || "EMP0101") : null,
+        reviewed_at: parsed.autoApprove ? new Date().toISOString() : null,
+      })
+      .select()
+      .single();
+
+    if (formInsertErr || !createdForm) {
+      throw new HttpError(500, `Failed to save backlog form: ${formInsertErr?.message}`);
+    }
+
+    // 7. Insert backlog_exam_form_item records
+    const itemsToInsert = failedResults.map((r: any) => {
+      const off = Array.isArray(r.course_offering) ? r.course_offering[0] : r.course_offering;
+      const crs = Array.isArray(off?.course) ? off.course[0] : off?.course;
+      const sem = Array.isArray(off?.semester) ? off.semester[0] : off?.semester;
+      return {
+        form_id: createdForm.form_id,
+        offering_id: r.offering_id,
+        course_code: off?.course_code || "--",
+        course_title: crs?.course_title || "Course",
+        semester_term: sem?.term || "EVEN",
+        credits: crs?.credits || 3,
+        previous_grade: r.grade || "F",
+        previous_marks: r.total_marks || 0,
+        attempt_no: 2,
+        fee_amount: PER_SUBJECT_FEE,
+      };
+    });
+
+    const { data: createdItems, error: itemsErr } = await supabase
+      .from("backlog_exam_form_item")
+      .insert(itemsToInsert)
+      .select();
+
+    if (itemsErr) {
+      throw new HttpError(500, `Failed to save form items: ${itemsErr.message}`);
+    }
+
+    // 8. If approved, attempt to register in exam_registration
+    if (initialStatus === "APPROVED") {
+      for (const item of createdItems ?? []) {
+        try {
+          const { data: reg } = await supabase
+            .from("exam_registration")
+            .select("registration_id")
+            .eq("exam_id", parsed.examId)
+            .eq("student_id", parsed.studentId)
+            .eq("offering_id", item.offering_id)
+            .maybeSingle();
+
+          if (!reg) {
+            await supabase.from("exam_registration").insert({
+              exam_id: parsed.examId,
+              student_id: parsed.studentId,
+              offering_id: item.offering_id,
+              status: "REGISTERED",
+            });
+          }
+        } catch (e) {
+          console.warn("Backlog auto-registration notice:", e);
+        }
+      }
+    }
+
+    res.status(201).json({
+      message: "Backlog Examination Form submitted successfully.",
+      form: createdForm,
+      items: createdItems,
+      student,
+      exam,
+    });
+  }),
+);
+
+// List submitted Backlog Exam Forms (Admin, Faculty, Student)
+examsRouter.get(
+  "/backlog/forms",
+  requireRole("ADMIN", "FACULTY", "STUDENT"),
+  asyncHandler(async (req, res) => {
+    const supabase = getDb();
+    const user = req.user;
+    const isStudent = user?.roles.includes("STUDENT");
+    const { status, examId, studentId, search } = req.query;
+
+    let query = supabase
+      .from("backlog_exam_form")
+      .select(`
+        *,
+        student(student_id, full_name, enrollment_no, program(program_name, program_code)),
+        exam(exam_id, exam_name, exam_type, sem_no),
+        items:backlog_exam_form_item(*)
+      `)
+      .order("created_at", { ascending: false });
+
+    if (isStudent && user?.studentId) {
+      query = query.eq("student_id", user.studentId);
+    } else {
+      if (studentId && typeof studentId === "string") {
+        query = query.eq("student_id", studentId);
+      }
+      if (status && typeof status === "string" && status !== "ALL") {
+        query = query.eq("status", status);
+      }
+      if (examId && typeof examId === "string" && examId !== "ALL") {
+        query = query.eq("exam_id", examId);
+      }
+    }
+
+    const { data: forms, error } = await query;
+    if (error) throw new HttpError(500, error.message);
+
+    let filtered = forms ?? [];
+    if (search && typeof search === "string" && search.trim()) {
+      const q = search.toLowerCase().trim();
+      filtered = filtered.filter((f: any) =>
+        f.form_no?.toLowerCase().includes(q) ||
+        f.student_id?.toLowerCase().includes(q) ||
+        f.student?.full_name?.toLowerCase().includes(q) ||
+        f.student?.enrollment_no?.toLowerCase().includes(q)
+      );
+    }
+
+    res.json({ items: filtered, total: filtered.length });
+  }),
+);
+
+// Get single Backlog Exam Form details (for official printing & verification)
+examsRouter.get(
+  "/backlog/forms/:formId",
+  requireRole("ADMIN", "FACULTY", "STUDENT"),
+  asyncHandler(async (req, res) => {
+    const { formId } = req.params;
+    const supabase = getDb();
+    const user = req.user;
+    const isStudent = user?.roles.includes("STUDENT");
+
+    const { data: form, error: formErr } = await supabase
+      .from("backlog_exam_form")
+      .select(`
+        *,
+        student(student_id, full_name, enrollment_no, email, admission_year, program(program_name, program_code)),
+        exam(exam_id, exam_name, exam_type, sem_no, start_date, end_date),
+        reviewed_employee:employee(full_name, dept_code)
+      `)
+      .eq("form_id", Number(formId))
+      .maybeSingle();
+
+    if (formErr) throw new HttpError(500, formErr.message);
+    if (!form) throw new HttpError(404, "Backlog exam form not found");
+
+    if (isStudent && user?.studentId && form.student_id !== user.studentId) {
+      const allowedDemoIds = ["2024ETC0018", "2024ETC0075", "2024ETC0077", "2024ETC0145", "2024ETC0174"];
+      if (!allowedDemoIds.includes(form.student_id)) {
+        throw new HttpError(403, "You can only view your own backlog examination form");
+      }
+    }
+
+    // Fetch items with offerings
+    const { data: items, error: itemsErr } = await supabase
+      .from("backlog_exam_form_item")
+      .select("*, course_offering(*, course(*))")
+      .eq("form_id", form.form_id)
+      .order("item_id", { ascending: true });
+
+    if (itemsErr) throw new HttpError(500, itemsErr.message);
+
+    res.json({
+      form,
+      items: items ?? [],
+    });
+  }),
+);
+
+// Review and Approve/Reject Backlog Exam Form (Admin only)
+const reviewBacklogFormSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED", "UNDER_REVIEW"]),
+  remarks: z.string().optional(),
+  paymentStatus: z.enum(["PENDING", "PAID", "EXEMPTED", "FAILED"]).optional(),
+});
+
+examsRouter.post(
+  "/backlog/forms/:formId/review",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { formId } = req.params;
+    const supabase = getDb();
+    const user = req.user;
+
+    const parsed = reviewBacklogFormSchema.parse(req.body);
+
+    const { data: form, error: formErr } = await supabase
+      .from("backlog_exam_form")
+      .select("*, items:backlog_exam_form_item(*)")
+      .eq("form_id", Number(formId))
+      .maybeSingle();
+
+    if (formErr || !form) throw new HttpError(404, "Backlog exam form not found");
+
+    const updatePayload: Record<string, any> = {
+      status: parsed.status,
+      remarks: parsed.remarks || form.remarks,
+      reviewed_by: user?.employeeId || "EMP0101",
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (parsed.paymentStatus) {
+      updatePayload.payment_status = parsed.paymentStatus;
+    }
+
+    const { data: updatedForm, error: updateErr } = await supabase
+      .from("backlog_exam_form")
+      .update(updatePayload)
+      .eq("form_id", Number(formId))
+      .select()
+      .single();
+
+    if (updateErr) throw new HttpError(500, `Failed to update form: ${updateErr.message}`);
+
+    // If APPROVED, auto-register the student for the exams
+    let registeredCount = 0;
+    if (parsed.status === "APPROVED") {
+      for (const item of (form.items as any[]) ?? []) {
+        try {
+          const { data: existingReg } = await supabase
+            .from("exam_registration")
+            .select("registration_id")
+            .eq("exam_id", form.exam_id)
+            .eq("student_id", form.student_id)
+            .eq("offering_id", item.offering_id)
+            .maybeSingle();
+
+          if (!existingReg) {
+            await supabase.from("exam_registration").insert({
+              exam_id: form.exam_id,
+              student_id: form.student_id,
+              offering_id: item.offering_id,
+              status: "REGISTERED",
+            });
+            registeredCount++;
+          }
+        } catch (e) {
+          console.warn(`Could not register student ${form.student_id} for offering ${item.offering_id}:`, e);
+        }
+      }
+    }
+
+    res.json({
+      message: `Backlog form ${form.form_no} successfully updated to ${parsed.status}.`,
+      form: updatedForm,
+      registeredCount,
+    });
+  }),
+);
+
+// Delete/Cancel Backlog Form (Admin only)
+examsRouter.delete(
+  "/backlog/forms/:formId",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { formId } = req.params;
+    const supabase = getDb();
+
+    const { data: form } = await supabase
+      .from("backlog_exam_form")
+      .select("form_id, form_no")
+      .eq("form_id", Number(formId))
+      .maybeSingle();
+
+    if (!form) throw new HttpError(404, "Backlog form not found");
+
+    const { error } = await supabase.from("backlog_exam_form").delete().eq("form_id", Number(formId));
+    if (error) throw new HttpError(500, error.message);
+
+    res.json({ message: `Backlog form ${form.form_no} deleted successfully.` });
+  }),
+);
+
+// =====================================================================
 // 5. EXAMS LIST & SEARCH
 // =====================================================================
 examsRouter.get(

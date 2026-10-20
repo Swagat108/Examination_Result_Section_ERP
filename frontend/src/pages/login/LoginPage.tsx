@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { MODULES } from "../../modules";
 
-const DEV_ACCOUNTS = ["admin", "faculty", "student", "accountant", "placement"];
+const DEV_ACCOUNTS = ["admin", "faculty", "student", "student.failed", "accountant", "placement"];
 
 export default function LoginPage() {
   const { user, login } = useAuth();

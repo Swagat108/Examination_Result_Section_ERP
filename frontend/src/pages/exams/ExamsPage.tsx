@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../../auth/AuthContext";
 import { ControlPanel } from "../../components/ControlPanel";
+import { BacklogExamForm } from "./BacklogExamForm";
 import { ExamDashboard } from "./ExamDashboard";
 import { ExamList } from "./ExamList";
 import { ExamTimetable } from "./ExamTimetable";
@@ -25,15 +26,23 @@ export default function ExamsPage() {
     setActiveTab("marks");
   };
 
+  const handleNavigateToBacklogForm = () => {
+    setActiveTab(isStudent ? "backlog_form" : "backlog_forms");
+  };
+
   const tabs = [
     ...(isStudent
-      ? [{ key: "my_results", label: "🎓 My Results & Transcript" }]
+      ? [
+          { key: "my_results", label: "🎓 My Results & Transcript" },
+          { key: "backlog_form", label: "📝 Backlog / Remedial Exam Form" },
+        ]
       : []),
     { key: "dashboard", label: "📊 Overview Dashboard" },
     ...(!isStudent ? [{ key: "exams", label: "📋 Examination Events" }] : []),
     { key: "timetable", label: "🗓️ Examination Timetable" },
     ...(!isStudent ? [{ key: "marks", label: "✍️ Marks Entry & Approval" }] : []),
     ...(!isStudent ? [{ key: "results", label: "🏆 Results & Publication" }] : []),
+    ...(!isStudent ? [{ key: "backlog_forms", label: "📝 Backlog Exam Forms" }] : []),
   ];
 
   return (
@@ -87,9 +96,15 @@ export default function ExamsPage() {
         )}
 
         {activeTab === "my_results" && (
-          <StudentResultPortal />
+          <StudentResultPortal onNavigateToBacklogForm={handleNavigateToBacklogForm} />
+        )}
+
+        {(activeTab === "backlog_form" || activeTab === "backlog_forms") && (
+          <BacklogExamForm isAdmin={isAdmin} isFaculty={isFaculty} />
         )}
       </div>
     </>
   );
 }
+
+

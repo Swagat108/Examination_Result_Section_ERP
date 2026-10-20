@@ -152,6 +152,51 @@ CREATE TABLE marks_submission (
   KEY ix_marksub_exam (exam_id, status)
 ) ENGINE=InnoDB COMMENT='G2: review and approval lifecycle for course examination marks';
 
+CREATE TABLE backlog_exam_form (
+  form_id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  form_no         VARCHAR(32)  NOT NULL,
+  student_id      CHAR(11)     NOT NULL,
+  exam_id         VARCHAR(12)  NOT NULL,
+  academic_year   VARCHAR(20)  NOT NULL DEFAULT '2026-27',
+  total_subjects  TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  total_credits   TINYINT UNSIGNED NOT NULL DEFAULT 3,
+  base_fee        DECIMAL(8,2) NOT NULL DEFAULT 250.00,
+  per_subject_fee DECIMAL(8,2) NOT NULL DEFAULT 350.00,
+  total_fee       DECIMAL(8,2) NOT NULL,
+  payment_mode    VARCHAR(30)  NOT NULL DEFAULT 'ONLINE',
+  payment_status  ENUM('PENDING','PAID','EXEMPTED','FAILED') NOT NULL DEFAULT 'PAID',
+  payment_reference VARCHAR(64) NULL,
+  status          ENUM('SUBMITTED','UNDER_REVIEW','APPROVED','REJECTED','CANCELLED') NOT NULL DEFAULT 'SUBMITTED',
+  remarks         TEXT         NULL,
+  reviewed_by     CHAR(7)      NULL,
+  reviewed_at     TIMESTAMP    NULL,
+  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT pk_backlog_exam_form PRIMARY KEY (form_id),
+  CONSTRAINT uq_backlog_exam_form_no UNIQUE (form_no),
+  CONSTRAINT fk_backlogform_student FOREIGN KEY (student_id) REFERENCES student (student_id),
+  CONSTRAINT fk_backlogform_exam FOREIGN KEY (exam_id) REFERENCES exam (exam_id),
+  CONSTRAINT fk_backlogform_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES employee (employee_id)
+) ENGINE=InnoDB COMMENT='G2: examination registration form submitted by failed students for backlogs';
+
+CREATE TABLE backlog_exam_form_item (
+  item_id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  form_id         INT UNSIGNED NOT NULL,
+  offering_id     INT UNSIGNED NOT NULL,
+  course_code     VARCHAR(20)  NOT NULL,
+  course_title    VARCHAR(150) NOT NULL,
+  semester_term   VARCHAR(40)  NULL,
+  credits         TINYINT UNSIGNED NOT NULL DEFAULT 3,
+  previous_grade  VARCHAR(2)   NOT NULL DEFAULT 'F',
+  previous_marks  DECIMAL(5,2) NULL,
+  attempt_no      TINYINT UNSIGNED NOT NULL DEFAULT 2,
+  fee_amount      DECIMAL(8,2) NOT NULL DEFAULT 350.00,
+  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT pk_backlog_exam_form_item PRIMARY KEY (item_id),
+  CONSTRAINT fk_backlogitem_form FOREIGN KEY (form_id) REFERENCES backlog_exam_form (form_id) ON DELETE CASCADE,
+  CONSTRAINT fk_backlogitem_offering FOREIGN KEY (offering_id) REFERENCES course_offering (offering_id)
+) ENGINE=InnoDB COMMENT='G2: course subjects selected for re-examination in a backlog form';
+
 -- ---------------------------------------------------------------------
 -- SQL OBJECTS
 -- ---------------------------------------------------------------------

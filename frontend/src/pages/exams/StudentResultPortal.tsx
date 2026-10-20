@@ -40,7 +40,11 @@ interface StudentResultData {
   semesters: SemesterData[];
 }
 
-export function StudentResultPortal() {
+interface StudentResultPortalProps {
+  onNavigateToBacklogForm?: () => void;
+}
+
+export function StudentResultPortal({ onNavigateToBacklogForm }: StudentResultPortalProps) {
   const [data, setData] = useState<StudentResultData | null>(null);
   const [selectedSemId, setSelectedSemId] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -105,6 +109,9 @@ export function StudentResultPortal() {
   const totalMax = activeSemester.courses.reduce((acc, c) => acc + (c.maxMarks || 0), 0);
   const semPercentage = totalMax > 0 ? ((totalObtained / totalMax) * 100).toFixed(2) : "0.00";
 
+  // Check for any backlogs across all published results
+  const allBacklogs = data.semesters.flatMap((s) => s.courses).filter((c) => c.grade === "F");
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Student Banner and Cumulative CGPA Card */}
@@ -158,6 +165,52 @@ export function StudentResultPortal() {
           </div>
         </div>
       </div>
+
+      {/* Backlog / Failed Course Action Banner */}
+      {allBacklogs.length > 0 && (
+        <div
+          className="card no-print"
+          style={{
+            background: "#fff1f2",
+            border: "1px solid #fecdd3",
+            padding: "16px 20px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}
+        >
+          <div>
+            <h3 style={{ margin: "0 0 4px", color: "var(--danger)", fontSize: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span>⚠️</span>
+              Re-examination Required: {allBacklogs.length} Pending Course Backlog(s)
+            </h3>
+            <p style={{ margin: 0, fontSize: "13px", color: "#881337" }}>
+              You have unsatisfied requirements with Grade 'F' in:{" "}
+              <b>{allBacklogs.map((b) => `${b.courseCode} (${b.courseTitle})`).join(", ")}</b>.
+              The University Examination Cell has opened the Backlog / Supplementary Exam Form window.
+            </p>
+          </div>
+
+          {onNavigateToBacklogForm && (
+            <button
+              onClick={onNavigateToBacklogForm}
+              style={{
+                padding: "9px 20px",
+                fontWeight: 700,
+                background: "var(--danger)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "var(--radius-control)",
+                cursor: "pointer",
+              }}
+            >
+              Fill Backlog Exam Form →
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Printable Official University Header */}
       <div className="print-only" style={{ display: "none", textAlign: "center", marginBottom: "20px" }}>

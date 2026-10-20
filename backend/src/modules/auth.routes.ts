@@ -15,6 +15,8 @@ const devUsers: AuthUser[] = [
   { id: 2, username: "faculty.demo", email: "faculty.demo@erp.local", roles: ["FACULTY"], employeeId: "EMP0101" },
   { id: 3, username: "student", email: "student@erp.test", roles: ["STUDENT"], studentId: "2024ETC0003" },
   { id: 3, username: "student.demo", email: "student.demo@erp.local", roles: ["STUDENT"], studentId: "2024ETC0003" },
+  { id: 6, username: "student.failed", email: "student.failed@erp.test", roles: ["STUDENT"], studentId: "2024ETC0018" },
+  { id: 7, username: "student.backlog", email: "student.backlog@erp.test", roles: ["STUDENT"], studentId: "2024ETC0075" },
   { id: 4, username: "accountant", email: "accountant@erp.test", roles: ["ACCOUNTANT"], employeeId: "EMP0201" },
   { id: 4, username: "accountant.demo", email: "accountant.demo@erp.local", roles: ["ACCOUNTANT"], employeeId: "EMP0201" },
   { id: 5, username: "placement", email: "placement@erp.test", roles: ["PLACEMENT_OFFICER"], employeeId: "EMP0202" },

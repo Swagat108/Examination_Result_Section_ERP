@@ -157,6 +157,21 @@ export function ExamDashboard({ onSelectTab, isAdmin }: ExamDashboardProps) {
             <small>grades</small>
           </span>
         </div>
+
+        <div className="card module-card" onClick={() => onSelectTab("backlog_forms")} style={{ cursor: "pointer" }}>
+          <div className="top">
+            <span className="module-icon" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>
+              <Icon name="admin" />
+            </span>
+            <span className="badge danger">Backlogs</span>
+          </div>
+          <strong>Backlog Exam Forms</strong>
+          <span className="blurb">Exam forms for failed students</span>
+          <span className="count" style={{ color: "var(--danger)" }}>
+            14
+            <small>candidates</small>
+          </span>
+        </div>
       </div>
 
       {/* Quick Action Bar for Admin/Staff */}
@@ -181,6 +196,9 @@ export function ExamDashboard({ onSelectTab, isAdmin }: ExamDashboardProps) {
           </button>
           <button className="secondary" onClick={() => onSelectTab("results")}>
             Results & Verification
+          </button>
+          <button className="secondary" onClick={() => onSelectTab("backlog_forms")}>
+            📝 Backlog Exam Forms
           </button>
         </div>
       </div>
